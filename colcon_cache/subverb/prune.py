@@ -19,17 +19,19 @@ class PruneCacheSubverb(CacheSubverbExtensionPoint):
             CacheSubverbExtensionPoint.EXTENSION_POINT_VERSION, '^1.0')
 
     def add_arguments(self, *, parser):  # noqa: D102
+        max_age = os.environ.get('COLCON_CACHE_ARTIFACT_MAX_AGE')
+        max_size = os.environ.get('COLCON_CACHE_ARTIFACT_MAX_SIZE')
         parser.add_argument(
             '--cache-artifacts',
             default=os.environ.get('COLCON_CACHE_ARTIFACTS'),
             help='Package artifact directory')
         parser.add_argument(
             '--max-age', type=parse_duration,
-            default=os.environ.get('COLCON_CACHE_ARTIFACT_MAX_AGE'),
+            default=parse_duration(max_age) if max_age else None,
             help='Prune artifacts unused for this duration (e.g. 30d)')
         parser.add_argument(
             '--max-size', type=parse_size,
-            default=os.environ.get('COLCON_CACHE_ARTIFACT_MAX_SIZE'),
+            default=parse_size(max_size) if max_size else None,
             help='Prune least-recently-used artifacts above this size '
                  '(e.g. 20GiB)')
 
