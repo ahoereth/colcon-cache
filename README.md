@@ -67,6 +67,10 @@ artifact arguments. Explicit command-line arguments take precedence. This lets
 an image or development environment configure artifact caching while users run
 ordinary `colcon build` commands.
 
+`COLCON_CACHE_LOCK_TYPE` can force source locking to `dirhash` or `git`. Forcing
+`dirhash` gives copied source trees and Git checkouts compatible content-based
+keys. Changing the lock type invalidates existing package locks.
+
 Package lockfiles cover package sources and recursive package dependencies. The
 context must cover external inputs such as the target architecture, compiler,
 build type, command-line build arguments, mixins, underlay or SDK, and artifact

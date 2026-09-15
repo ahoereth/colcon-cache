@@ -2,6 +2,8 @@
 # Licensed under the Apache License, Version 2.0
 
 # from colcon_core.package_augmentation import logger
+import os
+
 from colcon_core.package_augmentation import PackageAugmentationExtensionPoint
 from colcon_core.package_augmentation import update_descriptor
 from colcon_core.plugin_system import satisfies_version
@@ -26,6 +28,13 @@ class GitPackageAugmentation(PackageAugmentationExtensionPoint):
     def augment_package(  # noqa: D102
         self, desc, *, additional_argument_names=None
     ):
+        lock_type = os.environ.get('COLCON_CACHE_LOCK_TYPE')
+        if lock_type not in (None, 'dirhash', 'git'):
+            raise RuntimeError(
+                "unsupported COLCON_CACHE_LOCK_TYPE '{}'".format(lock_type))
+        if lock_type == 'dirhash':
+            return
+
         # deliberately ignore the package type
         # since this extension can contribute meta information to any package
         try:

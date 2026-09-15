@@ -32,11 +32,11 @@ class LockPackageSelection(PackageSelectionExtensionPoint):
         if not args.cache_lock:
             return
         if args.verb_name != 'build':
-            raise RuntimeError("'--cache-lock' currently supports build only")
+            raise SystemExit("'--cache-lock' currently supports build only")
 
         executable = shutil.which('colcon')
         if not executable:
-            raise RuntimeError("could not find the 'colcon' executable")
+            raise SystemExit("could not find the 'colcon' executable")
 
         command = [
             executable,
@@ -57,7 +57,7 @@ class LockPackageSelection(PackageSelectionExtensionPoint):
             stderr=subprocess.STDOUT,
             universal_newlines=True)
         if result.returncode:
-            raise RuntimeError(
+            raise SystemExit(
                 'failed to refresh package cache locks:\n{}'.format(
                     result.stdout.rstrip()))
         logger.info('Refreshed package cache locks')

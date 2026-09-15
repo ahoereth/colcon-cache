@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 
 from colcon_cache.package_augmentation.dirhash \
     import DirhashPackageAugmentation
+from colcon_cache.package_augmentation.git import GitPackageAugmentation
 from colcon_core.package_descriptor import PackageDescriptor
 
 
@@ -28,3 +29,16 @@ def test_no_augmentation():
 
         augmentation_extension.augment_package(desc)
         assert desc.metadata['vcs_type'] == 'default'
+
+
+def test_force_dirhash_ignores_git(monkeypatch):
+    monkeypatch.setenv('COLCON_CACHE_LOCK_TYPE', 'dirhash')
+    augmentation_extension = GitPackageAugmentation()
+
+    with TemporaryDirectory(prefix='test_colcon_') as basepath:
+        desc = PackageDescriptor(basepath)
+        desc.metadata['vcs_type'] = 'dirhash'
+
+        augmentation_extension.augment_package(desc)
+
+        assert desc.metadata['vcs_type'] == 'dirhash'

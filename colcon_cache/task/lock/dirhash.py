@@ -174,9 +174,8 @@ class DirhashLockTask(TaskExtensionPoint):
         cache_base = Path(args.build_base, 'cache')
         cache_base.mkdir(parents=True, exist_ok=True)
         lockfile = get_previous_lockfile(args.build_base, 'cache')
-        if lockfile is None:
+        if lockfile is None or lockfile.lock_type != ENTRY_TYPE:
             lockfile = CacheLockfile(lock_type=ENTRY_TYPE)
-        assert lockfile.lock_type == ENTRY_TYPE
 
         dep_lockfiles = \
             get_dependencies_lockfiles(args, self.context.dependencies)

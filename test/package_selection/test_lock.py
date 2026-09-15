@@ -66,5 +66,5 @@ def test_lock_reports_failure(monkeypatch):
         verb_name='build',
         build_base='build',
         base_paths=None)
-    with pytest.raises(RuntimeError, match='lock failed'):
+    with pytest.raises(SystemExit, match='lock failed'):
         LockPackageSelection().select_packages(args, [])
