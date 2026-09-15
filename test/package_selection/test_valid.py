@@ -38,8 +38,11 @@ def test_valid():
 
 
 def test_artifact_defaults_from_environment(monkeypatch):
+    monkeypatch.delenv('COLCON_CACHE_CONTEXT_FILE', raising=False)
     monkeypatch.setenv('COLCON_CACHE_ARTIFACTS', '/tmp/artifacts')
     monkeypatch.setenv('COLCON_CACHE_CONTEXT', 'target-v1')
+    monkeypatch.setenv('COLCON_CACHE_ARTIFACT_MAX_AGE', '30d')
+    monkeypatch.setenv('COLCON_CACHE_ARTIFACT_MAX_SIZE', '20GiB')
     parser = ArgumentParser()
     ValidPackageSelection().add_arguments(parser=parser)
 
@@ -48,3 +51,5 @@ def test_artifact_defaults_from_environment(monkeypatch):
     assert args.cache_artifacts == '/tmp/artifacts'
     assert args.cache_context == 'target-v1'
     assert args.cache_context_file is None
+    assert args.cache_artifacts_max_age == 30 * 24 * 60 * 60
+    assert args.cache_artifacts_max_size == 20 * 1024 ** 3

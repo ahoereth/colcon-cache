@@ -5,6 +5,8 @@
 import os
 
 from colcon_cache.artifact import ArtifactCache
+from colcon_cache.artifact import parse_duration
+from colcon_cache.artifact import parse_size
 from colcon_cache.verb_handler import get_verb_handler_extensions
 from colcon_core.package_selection import logger
 from colcon_core.package_selection import PackageSelectionExtensionPoint
@@ -44,6 +46,15 @@ class ValidPackageSelection(PackageSelectionExtensionPoint):
             '--cache-context-file',
             default=os.environ.get('COLCON_CACHE_CONTEXT_FILE'),
             help='Read the build context from this file')
+        parser.add_argument(
+            '--cache-artifacts-max-age', type=parse_duration,
+            default=os.environ.get('COLCON_CACHE_ARTIFACT_MAX_AGE'),
+            help='Prune artifacts unused for this duration (e.g. 30d)')
+        parser.add_argument(
+            '--cache-artifacts-max-size', type=parse_size,
+            default=os.environ.get('COLCON_CACHE_ARTIFACT_MAX_SIZE'),
+            help='Prune least-recently-used artifacts above this size '
+                 '(e.g. 20GiB)')
 
     def select_packages(self, args, decorators):  # noqa: D102
         if not any((
@@ -68,6 +79,8 @@ class ValidPackageSelection(PackageSelectionExtensionPoint):
             return
 
         artifact_cache = ArtifactCache.from_args(args)
+        if artifact_cache:
+            artifact_cache.prune()
 
         verb_name = args.packages_select_cache_key
         if not verb_name:

@@ -73,6 +73,23 @@ command-line arguments take precedence. This lets an image or development
 environment configure artifact caching while users run ordinary `colcon build`
 commands.
 
+Artifact pruning can be configured with `--cache-artifacts-max-age` and
+`--cache-artifacts-max-size`, or with `COLCON_CACHE_ARTIFACT_MAX_AGE` and
+`COLCON_CACHE_ARTIFACT_MAX_SIZE`. Durations use `s`, `m`, `h`, `d`, or `w`;
+sizes use `B`, `KiB`, `MiB`, `GiB`, or `TiB`. Each build attempts a non-blocking
+prune before restoring artifacts. A busy cache skips pruning rather than
+serializing concurrent builds. Successful stores and restores update separate
+access metadata while artifact contents remain immutable.
+
+Pruning can also be run explicitly:
+
+```
+colcon cache prune \
+  --cache-artifacts ~/.cache/colcon-artifacts \
+  --max-age 30d \
+  --max-size 20GiB
+```
+
 `COLCON_CACHE_LOCK_TYPE` can force source locking to `dirhash` or `git`. Forcing
 `dirhash` gives copied source trees and Git checkouts compatible content-based
 keys. Changing the lock type invalidates existing package locks.

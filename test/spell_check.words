@@ -10,11 +10,15 @@ checksum
 checksums
 colcon
 contextlib
+contextmanager
 copytree
 deepcopy
+delenv
 dirhash
 downcased
 fallbacks
+fcntl
+fdopen
 fromhex
 getaffinity
 github
@@ -28,8 +32,11 @@ iterdir
 linter
 lockfile
 lockfiles
+lstat
 mkdtemp
+mkstemp
 monkeypatch
+mtime
 nargs
 noqa
 pathlib
@@ -43,6 +50,7 @@ rtype
 scspell
 setenv
 setuptools
+smhdw
 staticmethod
 subparser
 subparsers
@@ -54,4 +62,5 @@ thomas
 todo
 unittest
 unmerged
+utime
 wildcard

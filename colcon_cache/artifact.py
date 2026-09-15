@@ -1,33 +1,79 @@
 # Copyright 2026 colcon-cache contributors
 # Licensed under the Apache License, Version 2.0
 
-"""Store and restore package build artifacts."""
+"""Store, restore, and prune package build artifacts."""
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import tempfile
+import time
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
 
 from colcon_cache.event_handler import get_previous_lockfile
 from colcon_core.logging import colcon_logger
 
 
 logger = colcon_logger.getChild(__name__)
-
 ARTIFACT_SCHEMA = 1
 MANIFEST_FILENAME = 'manifest.json'
+_ACCESS_DIRECTORY = '.access'
+_SIZE_DIRECTORY = '.size'
+_LOCK_FILENAME = '.lock'
+_KEY_PATTERN = re.compile(r'^[0-9a-f]{64}$')
+_DURATION_UNITS = {
+    's': 1,
+    'm': 60,
+    'h': 60 * 60,
+    'd': 24 * 60 * 60,
+    'w': 7 * 24 * 60 * 60,
+}
+_SIZE_UNITS = {
+    'B': 1,
+    'KiB': 1024,
+    'MiB': 1024 ** 2,
+    'GiB': 1024 ** 3,
+    'TiB': 1024 ** 4,
+}
+
+
+def parse_duration(value):
+    """Parse a non-negative duration such as ``30d`` into seconds."""
+    match = re.match(r'^(\d+)([smhdw])$', value)
+    if not match:
+        raise ValueError("invalid duration '{}'; expected e.g. 30d".format(
+            value))
+    return int(match.group(1)) * _DURATION_UNITS[match.group(2)]
+
+
+def parse_size(value):
+    """Parse a non-negative binary size such as ``20GiB`` into bytes."""
+    match = re.match(r'^(\d+)(B|KiB|MiB|GiB|TiB)$', value)
+    if not match:
+        raise ValueError("invalid size '{}'; expected e.g. 20GiB".format(
+            value))
+    return int(match.group(1)) * _SIZE_UNITS[match.group(2)]
 
 
 class ArtifactCache:
     """Content-addressed cache for isolated package prefixes."""
 
-    def __init__(self, root, context, build_base, install_base):
+    def __init__(self, root, context, build_base, install_base,
+                 max_age=None, max_size=None):
         self.root = Path(root).absolute()
         self.context = context
         self.build_base = Path(build_base).absolute()
         self.install_base = Path(install_base).absolute()
+        self.max_age = max_age
+        self.max_size = max_size
 
     @classmethod
     def from_args(cls, args):
@@ -59,41 +105,51 @@ class ArtifactCache:
             raise RuntimeError('artifact caching currently supports build only')
         if getattr(args, 'merge_install', False):
             raise RuntimeError('artifact caching requires an isolated install')
-        return cls(root, context, args.build_base, args.install_base)
+        return cls(
+            root, context, args.build_base, args.install_base,
+            max_age=getattr(args, 'cache_artifacts_max_age', None),
+            max_size=getattr(args, 'cache_artifacts_max_size', None))
+
+    def prune(self):
+        """Best-effort prune expired and least-recently-used artifacts."""
+        return prune_artifacts(self.root, self.max_age, self.max_size)
 
     def restore(self, package_name, lockfile):
         """Restore one exact package artifact, returning whether it existed."""
         manifest = self._manifest(package_name, lockfile)
         artifact = self._artifact_path(manifest)
-        if not artifact.exists():
-            return False
-        self._validate_manifest(artifact, manifest)
+        with _cache_lock(self.root, exclusive=False):
+            if not artifact.exists():
+                return False
+            self._validate_manifest(artifact, manifest)
 
-        destinations = self._destinations(package_name)
-        temporary = []
-        try:
-            for name, destination in destinations.items():
-                source = artifact / name
-                if not source.is_dir():
-                    raise RuntimeError(
-                        "artifact '{}' has no {} directory".format(
-                            artifact, name))
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                temp = Path(tempfile.mkdtemp(
-                    prefix='.{}.artifact-'.format(package_name),
-                    dir=str(destination.parent)))
-                shutil.rmtree(str(temp))
-                shutil.copytree(str(source), str(temp), symlinks=True)
-                temporary.append((temp, destination))
+            destinations = self._destinations(package_name)
+            temporary = []
+            try:
+                for name, destination in destinations.items():
+                    source = artifact / name
+                    if not source.is_dir():
+                        raise RuntimeError(
+                            "artifact '{}' has no {} directory".format(
+                                artifact, name))
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    temp = Path(tempfile.mkdtemp(
+                        prefix='.{}.artifact-'.format(package_name),
+                        dir=str(destination.parent)))
+                    shutil.rmtree(str(temp))
+                    shutil.copytree(str(source), str(temp), symlinks=True)
+                    temporary.append((temp, destination))
 
-            for temp, destination in temporary:
-                self._remove(destination)
-                os.rename(str(temp), str(destination))
-            logger.info("Restored artifact for package '%s'", package_name)
-            return True
-        finally:
-            for temp, _ in temporary:
-                self._remove(temp)
+                for temp, destination in temporary:
+                    self._remove(destination)
+                    os.rename(str(temp), str(destination))
+                _record_usage(artifact)
+                logger.info(
+                    "Restored artifact for package '%s'", package_name)
+                return True
+            finally:
+                for temp, _ in temporary:
+                    self._remove(temp)
 
     def store(self, package_name, package_build_base, package_install_base,
               lockfile):
@@ -115,29 +171,34 @@ class ArtifactCache:
 
         manifest = self._manifest(package_name, lockfile)
         artifact = self._artifact_path(manifest)
-        if artifact.exists():
-            self._validate_manifest(artifact, manifest)
-            return
+        with _cache_lock(self.root, exclusive=False):
+            if artifact.exists():
+                self._validate_manifest(artifact, manifest)
+                _record_usage(artifact)
+                return
 
-        artifact.parent.mkdir(parents=True, exist_ok=True)
-        temp = Path(tempfile.mkdtemp(
-            prefix='.{}.'.format(artifact.name), dir=str(artifact.parent)))
-        try:
-            for name, source in actual.items():
-                shutil.copytree(
-                    str(source), str(temp / name), symlinks=True)
-            with (temp / MANIFEST_FILENAME).open('w') as stream:
-                json.dump(manifest, stream, indent=2, sort_keys=True)
-                stream.write('\n')
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            temp = Path(tempfile.mkdtemp(
+                prefix='.{}.'.format(artifact.name), dir=str(artifact.parent)))
             try:
-                os.rename(str(temp), str(artifact))
-            except OSError:
-                if not artifact.exists():
-                    raise
-            self._validate_manifest(artifact, manifest)
-            logger.info("Stored artifact for package '%s'", package_name)
-        finally:
-            self._remove(temp)
+                for name, source in actual.items():
+                    shutil.copytree(
+                        str(source), str(temp / name), symlinks=True)
+                with (temp / MANIFEST_FILENAME).open('w') as stream:
+                    json.dump(manifest, stream, indent=2, sort_keys=True)
+                    stream.write('\n')
+                artifact_size = _tree_size(temp)
+                try:
+                    os.rename(str(temp), str(artifact))
+                except OSError:
+                    if not artifact.exists():
+                        raise
+                    artifact_size = _tree_size(artifact)
+                self._validate_manifest(artifact, manifest)
+                _record_usage(artifact, size=artifact_size)
+                logger.info("Stored artifact for package '%s'", package_name)
+            finally:
+                self._remove(temp)
 
     def _destinations(self, package_name):
         return {
@@ -185,6 +246,160 @@ class ArtifactCache:
             path.unlink()
         elif path.is_dir():
             shutil.rmtree(str(path))
+
+
+def prune_artifacts(root, max_age=None, max_size=None):
+    """Prune one artifact store without waiting for active cache operations."""
+    if max_age is None and max_size is None:
+        return 0, 0
+    if fcntl is None:  # pragma: no cover
+        logger.warning('Artifact pruning requires POSIX file locking')
+        return 0, 0
+
+    root = Path(root).absolute()
+    version_root = root / 'v{}'.format(ARTIFACT_SCHEMA)
+    trash = None
+    removed_count = 0
+    removed_size = 0
+    with _cache_lock(
+            root, exclusive=True, blocking=False) as lock_acquired:
+        if not lock_acquired:
+            logger.info('Skipping artifact pruning; cache is in use')
+            return 0, 0
+        if not version_root.is_dir():
+            return 0, 0
+
+        now = time.time()
+        entries = []
+        for artifact in version_root.iterdir():
+            if not artifact.is_dir() or not _KEY_PATTERN.match(artifact.name):
+                continue
+            access = _metadata_path(artifact, _ACCESS_DIRECTORY)
+            last_used = (
+                access.stat().st_mtime if access.exists()
+                else artifact.stat().st_mtime)
+            size = _artifact_size(artifact)
+            entries.append((last_used, size, artifact))
+
+        selected = set()
+        if max_age is not None:
+            selected.update(
+                artifact for last_used, _, artifact in entries
+                if now - last_used > max_age)
+
+        retained_size = sum(
+            size for _, size, artifact in entries if artifact not in selected)
+        if max_size is not None and retained_size > max_size:
+            for _, size, artifact in sorted(
+                    entries, key=lambda entry: (entry[0], entry[2].name)):
+                if artifact in selected:
+                    continue
+                selected.add(artifact)
+                retained_size -= size
+                if retained_size <= max_size:
+                    break
+
+        if selected:
+            trash = Path(tempfile.mkdtemp(
+                prefix='.trash-', dir=str(version_root)))
+        sizes = {artifact: size for _, size, artifact in entries}
+        for artifact in selected:
+            try:
+                os.rename(str(artifact), str(trash / artifact.name))
+            except FileNotFoundError:  # pragma: no cover
+                continue
+            _remove_metadata(artifact)
+            removed_count += 1
+            removed_size += sizes[artifact]
+
+    if trash is not None:
+        shutil.rmtree(str(trash))
+    if removed_count:
+        logger.info(
+            'Pruned %d package artifacts (%d bytes)',
+            removed_count, removed_size)
+    return removed_count, removed_size
+
+
+@contextmanager
+def _cache_lock(root, exclusive, blocking=True):
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    if fcntl is None:  # pragma: no cover
+        yield True
+        return
+
+    with (root / _LOCK_FILENAME).open('a') as stream:
+        operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        if not blocking:
+            operation |= fcntl.LOCK_NB
+        try:
+            fcntl.flock(stream.fileno(), operation)
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+def _metadata_path(artifact, directory):
+    return artifact.parent / directory / artifact.name
+
+
+def _record_usage(artifact, size=None):
+    access = _metadata_path(artifact, _ACCESS_DIRECTORY)
+    access.parent.mkdir(parents=True, exist_ok=True)
+    access.touch()
+    size_path = _metadata_path(artifact, _SIZE_DIRECTORY)
+    if size is None and not size_path.exists():
+        size = _tree_size(artifact)
+    if size is not None:
+        _write_text_atomic(size_path, str(size))
+
+
+def _artifact_size(artifact):
+    path = _metadata_path(artifact, _SIZE_DIRECTORY)
+    try:
+        return int(path.read_text())
+    except (OSError, ValueError):
+        size = _tree_size(artifact)
+        _write_text_atomic(path, str(size))
+        return size
+
+
+def _remove_metadata(artifact):
+    for directory in (_ACCESS_DIRECTORY, _SIZE_DIRECTORY):
+        path = _metadata_path(artifact, directory)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _write_text_atomic(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix='.{}.'.format(path.name), dir=str(path.parent))
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            stream.write(value)
+        os.replace(temporary, str(path))
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def _tree_size(path):
+    total = 0
+    for root, directories, filenames in os.walk(str(path)):
+        for name in directories + filenames:
+            stat = os.lstat(os.path.join(root, name))
+            total += getattr(stat, 'st_blocks', 0) * 512 or stat.st_size
+    return total
 
 
 def get_package_lockfile(package_build_base):
