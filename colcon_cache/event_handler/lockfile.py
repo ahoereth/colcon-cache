@@ -2,6 +2,7 @@
 # Copyright 2021 Ruffin White
 # Licensed under the Apache License, Version 2.0
 
+from colcon_cache.artifact import ArtifactCache
 from colcon_cache.event_handler \
     import set_lockfile
 from colcon_cache.verb_handler \
@@ -52,5 +53,13 @@ class LockfileEventHandler(EventHandlerExtensionPoint):
                 return
 
             if lockfile:
-                set_lockfile(
-                    job.task_context.args.build_base, verb_name, lockfile)
+                package_args = job.task_context.args
+                set_lockfile(package_args.build_base, verb_name, lockfile)
+
+                artifact_cache = ArtifactCache.from_args(self.context.args)
+                if artifact_cache:
+                    artifact_cache.store(
+                        job.task_context.pkg.name,
+                        package_args.build_base,
+                        package_args.install_base,
+                        lockfile)

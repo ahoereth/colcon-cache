@@ -4,6 +4,7 @@
 
 import os
 
+from colcon_cache.artifact import ArtifactCache
 from colcon_cache.verb_handler import get_verb_handler_extensions
 from colcon_core.package_selection import logger
 from colcon_core.package_selection import PackageSelectionExtensionPoint
@@ -30,6 +31,12 @@ class ValidPackageSelection(PackageSelectionExtensionPoint):
             help='Skip a set of packages with a valid '
                  'cache (packages without a reference cache '
                  'are not considered)')
+        parser.add_argument(
+            '--cache-artifacts',
+            help='Store package build and install outputs in this directory')
+        parser.add_argument(
+            '--cache-context',
+            help='Build context included in package artifact keys')
 
     def select_packages(self, args, decorators):  # noqa: D102
         if not any((
@@ -52,6 +59,8 @@ class ValidPackageSelection(PackageSelectionExtensionPoint):
                 'information about the relative state of a package'
                 .format_map(locals()))
             return
+
+        artifact_cache = ArtifactCache.from_args(args)
 
         verb_name = args.packages_select_cache_key
         if not verb_name:
@@ -79,10 +88,13 @@ class ValidPackageSelection(PackageSelectionExtensionPoint):
             package_build_base = os.path.join(
                 args.build_base, pkg.name)
 
-            verb_lockfile = verb_handler_extension\
-                .get_current_lockfile(package_build_base)
             reference_lockfile = verb_handler_extension\
                 .get_reference_lockfile(package_build_base)
+            if artifact_cache and reference_lockfile:
+                artifact_cache.restore(pkg.name, reference_lockfile)
+
+            verb_lockfile = verb_handler_extension\
+                .get_current_lockfile(package_build_base)
             reference_name = verb_handler_extension.reference_name
 
             package_kind = None

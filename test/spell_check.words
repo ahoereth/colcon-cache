@@ -1,3 +1,4 @@
+abcdef
 acdmr
 andhus
 apache
@@ -37,10 +38,12 @@ rmtree
 rtype
 scspell
 setuptools
+staticmethod
 subparser
 subparsers
 subverb
 symlink
+symlinks
 tempfile
 thomas
 todo
