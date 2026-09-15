@@ -1,6 +1,8 @@
 # Copyright 2026 colcon-cache contributors
 # Licensed under the Apache License, Version 2.0
 
+from types import SimpleNamespace
+
 import pytest
 
 from colcon_cache.artifact import ArtifactCache
@@ -55,6 +57,23 @@ def test_different_context_is_a_cache_miss(tmp_path):
     assert not ArtifactCache(
         tmp_path / 'artifacts', 'release', build_base, install_base,
     ).restore('example', lockfile)
+
+
+def test_context_file(tmp_path):
+    context_file = tmp_path / 'context'
+    context_file.write_text('build-context\n')
+    args = SimpleNamespace(
+        cache_artifacts=str(tmp_path / 'artifacts'),
+        cache_context=None,
+        cache_context_file=str(context_file),
+        verb_name='build',
+        merge_install=False,
+        build_base='build',
+        install_base='install')
+
+    cache = ArtifactCache.from_args(args)
+
+    assert cache.context == 'build-context'
 
 
 def test_store_rejects_unexpected_output_paths(tmp_path):

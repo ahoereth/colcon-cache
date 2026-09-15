@@ -46,26 +46,32 @@ colcon build \
   --cache-lock \
   --packages-skip-cache-valid \
   --cache-artifacts ~/.cache/colcon-artifacts \
-  --cache-context linux-amd64-gcc13-release-sdk42-v1
+  --cache-context-file /etc/colcon-cache-context
 ```
 
 `--cache-lock` refreshes source and dependency locks before package selection.
 This makes a single build invocation safe after source changes.
 
-The artifact arguments are required together:
+`--cache-artifacts PATH` sets the directory containing the content-addressed
+package artifacts. It may be shared by builds because entries are immutable and
+published atomically.
 
-- `--cache-artifacts PATH`
-  - Directory containing the content-addressed package artifacts. It may be
-    shared by builds because entries are immutable and published atomically.
+One context source is required with the artifact directory:
+
 - `--cache-context ID`
-  - Caller-provided identity for build inputs not represented by package
-    lockfiles. It is included in each artifact key but is otherwise opaque to
-    the extension.
+  - Use the provided identity for build inputs not represented by package
+    lockfiles.
+- `--cache-context-file FILE`
+  - Read the identity from a file. Whitespace around the identity is ignored.
 
-`COLCON_CACHE_ARTIFACTS` and `COLCON_CACHE_CONTEXT` provide defaults for the two
-artifact arguments. Explicit command-line arguments take precedence. This lets
-an image or development environment configure artifact caching while users run
-ordinary `colcon build` commands.
+The context is included in each artifact key but is otherwise opaque to the
+extension. The context arguments are mutually exclusive.
+
+`COLCON_CACHE_ARTIFACTS`, `COLCON_CACHE_CONTEXT`, and
+`COLCON_CACHE_CONTEXT_FILE` provide defaults for these arguments. Explicit
+command-line arguments take precedence. This lets an image or development
+environment configure artifact caching while users run ordinary `colcon build`
+commands.
 
 `COLCON_CACHE_LOCK_TYPE` can force source locking to `dirhash` or `git`. Forcing
 `dirhash` gives copied source trees and Git checkouts compatible content-based

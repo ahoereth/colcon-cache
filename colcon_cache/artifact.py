@@ -34,12 +34,27 @@ class ArtifactCache:
         """Create a cache from colcon arguments, if configured."""
         root = getattr(args, 'cache_artifacts', None)
         context = getattr(args, 'cache_context', None)
+        context_file = getattr(args, 'cache_context_file', None)
+        if context and context_file:
+            raise RuntimeError(
+                "'--cache-context' and '--cache-context-file' are mutually "
+                'exclusive')
+        if context_file:
+            path = Path(context_file)
+            try:
+                context = path.read_text().strip()
+            except OSError as error:
+                raise RuntimeError(
+                    "could not read cache context file '{}': {}".format(
+                        path, error))
+            if not context:
+                raise RuntimeError(
+                    "cache context file '{}' is empty".format(path))
         if not root and not context:
             return None
         if not root or not context:
             raise RuntimeError(
-                "'--cache-artifacts' and '--cache-context' must be used "
-                'together')
+                "'--cache-artifacts' requires a cache context")
         if getattr(args, 'verb_name', None) != 'build':
             raise RuntimeError('artifact caching currently supports build only')
         if getattr(args, 'merge_install', False):

@@ -47,3 +47,4 @@ def test_artifact_defaults_from_environment(monkeypatch):
 
     assert args.cache_artifacts == '/tmp/artifacts'
     assert args.cache_context == 'target-v1'
+    assert args.cache_context_file is None

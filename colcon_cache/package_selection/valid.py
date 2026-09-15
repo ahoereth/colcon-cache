@@ -35,10 +35,15 @@ class ValidPackageSelection(PackageSelectionExtensionPoint):
             '--cache-artifacts',
             default=os.environ.get('COLCON_CACHE_ARTIFACTS'),
             help='Store package build and install outputs in this directory')
-        parser.add_argument(
+        context_group = parser.add_mutually_exclusive_group()
+        context_group.add_argument(
             '--cache-context',
             default=os.environ.get('COLCON_CACHE_CONTEXT'),
             help='Build context included in package artifact keys')
+        context_group.add_argument(
+            '--cache-context-file',
+            default=os.environ.get('COLCON_CACHE_CONTEXT_FILE'),
+            help='Read the build context from this file')
 
     def select_packages(self, args, decorators):  # noqa: D102
         if not any((
