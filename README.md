@@ -42,14 +42,17 @@ colcon test --packages-skip-cache-valid
 Builds can restore and store isolated package build and install directories:
 
 ```
-colcon cache lock
 colcon build \
+  --cache-lock \
   --packages-skip-cache-valid \
   --cache-artifacts ~/.cache/colcon-artifacts \
   --cache-context linux-amd64-gcc13-release-sdk42-v1
 ```
 
-Both arguments are required together:
+`--cache-lock` refreshes source and dependency locks before package selection.
+This makes a single build invocation safe after source changes.
+
+The artifact arguments are required together:
 
 - `--cache-artifacts PATH`
   - Directory containing the content-addressed package artifacts. It may be
@@ -58,6 +61,11 @@ Both arguments are required together:
   - Caller-provided identity for build inputs not represented by package
     lockfiles. It is included in each artifact key but is otherwise opaque to
     the extension.
+
+`COLCON_CACHE_ARTIFACTS` and `COLCON_CACHE_CONTEXT` provide defaults for the two
+artifact arguments. Explicit command-line arguments take precedence. This lets
+an image or development environment configure artifact caching while users run
+ordinary `colcon build` commands.
 
 Package lockfiles cover package sources and recursive package dependencies. The
 context must cover external inputs such as the target architecture, compiler,

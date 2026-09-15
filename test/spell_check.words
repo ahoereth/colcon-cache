@@ -2,6 +2,7 @@ abcdef
 acdmr
 andhus
 apache
+argparse
 basepath
 blocklist
 chdir
@@ -28,15 +29,19 @@ linter
 lockfile
 lockfiles
 mkdtemp
+monkeypatch
 nargs
 noqa
 pathlib
 plugin
 pydocstyle
 pytest
+returncode
 rmtree
+rstrip
 rtype
 scspell
+setenv
 setuptools
 staticmethod
 subparser

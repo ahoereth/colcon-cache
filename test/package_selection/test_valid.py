@@ -1,6 +1,8 @@
 # Copyright 2021 Ruffin White
 # Licensed under the Apache License, Version 2.0
 
+from argparse import ArgumentParser
+
 from colcon_cache.package_selection.valid import ValidPackageSelection
 # from colcon_core.package_selection import logger
 
@@ -33,3 +35,15 @@ def test_valid():
 
     args.packages_select_cache_key = 'foo'
     valid_package_selection.select_packages(args, decorators)
+
+
+def test_artifact_defaults_from_environment(monkeypatch):
+    monkeypatch.setenv('COLCON_CACHE_ARTIFACTS', '/tmp/artifacts')
+    monkeypatch.setenv('COLCON_CACHE_CONTEXT', 'target-v1')
+    parser = ArgumentParser()
+    ValidPackageSelection().add_arguments(parser=parser)
+
+    args = parser.parse_args([])
+
+    assert args.cache_artifacts == '/tmp/artifacts'
+    assert args.cache_context == 'target-v1'
